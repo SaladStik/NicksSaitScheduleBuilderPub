@@ -1501,7 +1501,7 @@ X-Synchronizer-Token: ...
         You can skip authentication and manually enter class information instead.
         
         **Don't trust me and want to read the code yourself?**  
-        [https://github.com/SaladStik/NicksSaitScheduleBuilder](https://github.com/SaladStik/NicksSaitScheduleBuilder)  
+        [https://github.com/SaladStik/NicksSaitScheduleBuilderPub](https://github.com/SaladStik/NicksSaitScheduleBuilderPub)  
         Here you go!
         """
     )

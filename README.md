@@ -9,7 +9,7 @@ A powerful web app that helps SAIT students explore **ALL** possible schedule co
 1. **Clone the repository:**
 
 ```bash
-git clone https://github.com/SaladStik/NicksSaitScheduleBuilder
+git clone https://github.com/SaladStik/NicksSaitScheduleBuilderPub
 cd Class-Schedule-Management
 ```
 
