@@ -1098,6 +1098,43 @@ def get_unique_time_slots(classes):
     return sorted(time_slots, key=lambda x: x[0])
 
 
+def get_hourly_time_slots(classes):
+    """Generate hourly time slots from earliest to latest class time"""
+    from datetime import datetime, timedelta
+    
+    # Find the earliest and latest times
+    all_times = []
+    for cls in classes:
+        for session in cls["schedule"]:
+            all_times.append(session["start_time"])
+            all_times.append(session["end_time"])
+    
+    if not all_times:
+        return []
+    
+    earliest = min(all_times)
+    latest = max(all_times)
+    
+    # Round down to the hour for start
+    start_hour = earliest.replace(minute=0, second=0, microsecond=0)
+    
+    # Round up to the hour for end
+    if latest.minute > 0 or latest.second > 0:
+        end_hour = (latest.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1))
+    else:
+        end_hour = latest
+    
+    # Generate hourly slots
+    time_slots = []
+    current = start_hour
+    while current < end_hour:
+        next_hour = current + timedelta(hours=1)
+        time_slots.append((current, next_hour))
+        current = next_hour
+    
+    return time_slots
+
+
 def get_random_light_color():
     return "{:02x}{:02x}{:02x}".format(
         random.randint(100, 255), random.randint(100, 255), random.randint(100, 255)
@@ -1105,11 +1142,52 @@ def get_random_light_color():
 
 
 def display_timetable_html(combo, time_slots, classes):
-    """Generate HTML for a single timetable"""
+    """Generate HTML for a single timetable with proper hourly rows"""
+    from datetime import timedelta
+    
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 
     # Generate random colors for each class
     class_colors = {cls["name"]: f"#{get_random_light_color()}" for cls in classes}
+
+    # Build a map of which cells are occupied and should be skipped due to rowspan
+    # Key: (row_idx, day), Value: True if this cell should be skipped
+    skip_cells = {}
+    
+    # Build a map of class info for each time slot and day
+    # Key: (row_idx, day), Value: (class_info, rowspan)
+    cell_data = {}
+    
+    # Pre-process all classes to determine rowspans
+    for cls in combo:
+        for session in cls["schedule"]:
+            day = session["day"]
+            start_time = session["start_time"]
+            end_time = session["end_time"]
+            
+            # Find which hourly slots this class spans
+            first_slot_idx = None
+            last_slot_idx = None
+            
+            for idx, (slot_start, slot_end) in enumerate(time_slots):
+                # Class starts in or before this slot and ends after slot starts
+                if start_time < slot_end and end_time > slot_start:
+                    if first_slot_idx is None:
+                        first_slot_idx = idx
+                    last_slot_idx = idx
+            
+            if first_slot_idx is not None:
+                rowspan = last_slot_idx - first_slot_idx + 1
+                bg_color = class_colors[cls["name"]]
+                class_room = session.get("class_room", "N/A")
+                class_info = f'<div style="background-color: {bg_color}; padding: 8px; border-radius: 4px; height: 100%;" class="class-cell"><strong>{cls["name"]}</strong><br>Group {cls["group"]}<br>Room: {class_room}</div>'
+                
+                # Store the cell data for the first slot
+                cell_data[(first_slot_idx, day)] = (class_info, rowspan)
+                
+                # Mark subsequent slots as skipped
+                for skip_idx in range(first_slot_idx + 1, last_slot_idx + 1):
+                    skip_cells[(skip_idx, day)] = True
 
     # Start building the HTML table
     html = """
@@ -1155,25 +1233,25 @@ def display_timetable_html(combo, time_slots, classes):
     html += "</tr>"
 
     # Add rows for each time slot
-    for time_slot in time_slots:
+    for idx, time_slot in enumerate(time_slots):
         start_str = time_slot[0].strftime("%H:%M")
         end_str = time_slot[1].strftime("%H:%M")
         html += f'<tr><td class="time-cell">{start_str} - {end_str}</td>'
 
         for day in days:
-            cell_content = ""
-            for cls in combo:
-                for session in cls["schedule"]:
-                    if (
-                        session["day"] == day
-                        and (session["start_time"], session["end_time"]) == time_slot
-                    ):
-                        bg_color = class_colors[cls["name"]]
-                        class_room = session.get("class_room", "N/A")
-                        cell_content = f'<div style="background-color: {bg_color}; padding: 8px; border-radius: 4px;" class="class-cell"><strong>{cls["name"]}</strong><br>Group {cls["group"]}<br>Room: {class_room}</div>'
-                        break
-
-            html += f"<td>{cell_content}</td>"
+            # Skip this cell if it's part of a rowspan from above
+            if skip_cells.get((idx, day), False):
+                continue
+            
+            # Check if there's class data for this cell
+            if (idx, day) in cell_data:
+                class_info, rowspan = cell_data[(idx, day)]
+                if rowspan > 1:
+                    html += f'<td rowspan="{rowspan}">{class_info}</td>'
+                else:
+                    html += f"<td>{class_info}</td>"
+            else:
+                html += "<td></td>"
 
         html += "</tr>"
 
@@ -1182,6 +1260,9 @@ def display_timetable_html(combo, time_slots, classes):
 
 
 def create_single_sheet_xlsx_timetables(combinations, filename, time_slots, classes):
+    """Create Excel timetables with proper hourly rows and merged cells for multi-hour classes"""
+    from datetime import timedelta
+    
     wb = Workbook()
     ws = wb.active
     ws.title = "Schedules"
@@ -1223,8 +1304,43 @@ def create_single_sheet_xlsx_timetables(combinations, filename, time_slots, clas
         for col in range(1, 7):  # Columns A-G
             ws.cell(row=current_row, column=col).border = dark_grey_border
 
+        # Track which cells should be skipped due to merging
+        skip_cells = {}
+        cell_data = {}
+        
+        # Pre-process all classes to determine which cells to merge
+        for cls in combo:
+            for session in cls["schedule"]:
+                day = session["day"]
+                start_time = session["start_time"]
+                end_time = session["end_time"]
+                
+                # Find which hourly slots this class spans
+                first_slot_idx = None
+                last_slot_idx = None
+                
+                for idx, (slot_start, slot_end) in enumerate(time_slots):
+                    # Class starts in or before this slot and ends after slot starts
+                    if start_time < slot_end and end_time > slot_start:
+                        if first_slot_idx is None:
+                            first_slot_idx = idx
+                        last_slot_idx = idx
+                
+                if first_slot_idx is not None:
+                    rowspan = last_slot_idx - first_slot_idx + 1
+                    class_room_info = session.get("class_room", "N/A")
+                    class_info = f"{cls['name']}\n(Group {cls['group']}\nRoom: {class_room_info})"
+                    
+                    # Store the cell data for the first slot
+                    cell_data[(first_slot_idx, day)] = (class_info, rowspan, cls["name"])
+                    
+                    # Mark subsequent slots as skipped
+                    for skip_idx in range(first_slot_idx + 1, last_slot_idx + 1):
+                        skip_cells[(skip_idx, day)] = True
+
         # Populate the timetable
-        for time_slot in time_slots:
+        first_timetable_row = current_row + 1
+        for idx, time_slot in enumerate(time_slots):
             current_row += 1
             ws.cell(
                 row=current_row,
@@ -1233,19 +1349,33 @@ def create_single_sheet_xlsx_timetables(combinations, filename, time_slots, clas
             )
             ws.cell(row=current_row, column=1).fill = header_color
 
-            for cls in combo:
-                for session in cls["schedule"]:
-                    if (session["start_time"], session["end_time"]) == time_slot:
-                        day_col = days.index(session["day"]) + 2
-                        cell = ws.cell(row=current_row, column=day_col)
-                        class_room_info = session.get("class_room", "N/A")
-                        cell.value = f"{cls['name']}\n(Group {cls['group']}\nRoom: {class_room_info})"
-                        cell.fill = class_colors[cls["name"]]
-                        cell.alignment = Alignment(wrap_text=True)
+            for day_idx, day in enumerate(days):
+                day_col = day_idx + 2
+                
+                # Skip this cell if it's part of a merge from above
+                if skip_cells.get((idx, day), False):
+                    continue
+                
+                # Check if there's class data for this cell
+                if (idx, day) in cell_data:
+                    class_info, rowspan, class_name = cell_data[(idx, day)]
+                    cell = ws.cell(row=current_row, column=day_col)
+                    cell.value = class_info
+                    cell.fill = class_colors[class_name]
+                    cell.alignment = Alignment(wrap_text=True, vertical='center', horizontal='center')
+                    
+                    # Merge cells if rowspan > 1
+                    if rowspan > 1:
+                        ws.merge_cells(
+                            start_row=current_row,
+                            start_column=day_col,
+                            end_row=current_row + rowspan - 1,
+                            end_column=day_col
+                        )
 
         # Apply the border to each cell in the timetable
         for row in ws.iter_rows(
-            min_row=current_row - len(time_slots),
+            min_row=first_timetable_row,
             max_row=current_row,
             min_col=1,
             max_col=6,
@@ -2811,7 +2941,7 @@ def timetable_creator():
                     st.success("✅ All selected courses are included in this schedule")
 
             # Display the timetable
-            time_slots = get_unique_time_slots(parsed_classes)
+            time_slots = get_hourly_time_slots(parsed_classes)
             timetable_html = display_timetable_html(current_combo, time_slots, classes)
             st.markdown(timetable_html, unsafe_allow_html=True)
 
@@ -3054,7 +3184,7 @@ def manual_schedule_editor():
                 )
 
         if parsed_classes:
-            time_slots = get_unique_time_slots(parsed_classes)
+            time_slots = get_hourly_time_slots(parsed_classes)
             timetable_html = display_timetable_html(
                 parsed_classes, time_slots, parsed_classes
             )
