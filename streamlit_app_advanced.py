@@ -1100,7 +1100,7 @@ def get_unique_time_slots(classes):
 
 def get_hourly_time_slots(classes):
     """Generate hourly time slots from earliest to latest class time"""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, time
     
     # Find the earliest and latest times
     all_times = []
@@ -1115,21 +1115,33 @@ def get_hourly_time_slots(classes):
     earliest = min(all_times)
     latest = max(all_times)
     
+    # Convert time objects to datetime for easier manipulation
+    base_date = datetime(2000, 1, 1)  # Arbitrary date for calculations
+    
+    # If they're already datetime objects, extract the time
+    if isinstance(earliest, datetime):
+        earliest_dt = earliest
+        latest_dt = latest
+    else:
+        # They're time objects, combine with base date
+        earliest_dt = datetime.combine(base_date, earliest)
+        latest_dt = datetime.combine(base_date, latest)
+    
     # Round down to the hour for start
-    start_hour = earliest.replace(minute=0, second=0, microsecond=0)
+    start_hour = earliest_dt.replace(minute=0, second=0, microsecond=0)
     
     # Round up to the hour for end
-    if latest.minute > 0 or latest.second > 0:
-        end_hour = (latest.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1))
+    if latest_dt.minute > 0 or latest_dt.second > 0:
+        end_hour = (latest_dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1))
     else:
-        end_hour = latest
+        end_hour = latest_dt
     
-    # Generate hourly slots
+    # Generate hourly slots and return as time objects
     time_slots = []
     current = start_hour
     while current < end_hour:
         next_hour = current + timedelta(hours=1)
-        time_slots.append((current, next_hour))
+        time_slots.append((current.time(), next_hour.time()))
         current = next_hour
     
     return time_slots
@@ -1143,7 +1155,7 @@ def get_random_light_color():
 
 def display_timetable_html(combo, time_slots, classes):
     """Generate HTML for a single timetable with proper hourly rows"""
-    from datetime import timedelta
+    from datetime import datetime, time as time_type
     
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 
@@ -1158,12 +1170,18 @@ def display_timetable_html(combo, time_slots, classes):
     # Key: (row_idx, day), Value: (class_info, rowspan)
     cell_data = {}
     
+    # Helper function to ensure we're comparing comparable objects
+    def normalize_time(t):
+        if isinstance(t, datetime):
+            return t.time()
+        return t
+    
     # Pre-process all classes to determine rowspans
     for cls in combo:
         for session in cls["schedule"]:
             day = session["day"]
-            start_time = session["start_time"]
-            end_time = session["end_time"]
+            start_time = normalize_time(session["start_time"])
+            end_time = normalize_time(session["end_time"])
             
             # Find which hourly slots this class spans
             first_slot_idx = None
@@ -1308,12 +1326,18 @@ def create_single_sheet_xlsx_timetables(combinations, filename, time_slots, clas
         skip_cells = {}
         cell_data = {}
         
+        # Helper function to ensure we're comparing comparable objects
+        def normalize_time(t):
+            if isinstance(t, datetime):
+                return t.time()
+            return t
+        
         # Pre-process all classes to determine which cells to merge
         for cls in combo:
             for session in cls["schedule"]:
                 day = session["day"]
-                start_time = session["start_time"]
-                end_time = session["end_time"]
+                start_time = normalize_time(session["start_time"])
+                end_time = normalize_time(session["end_time"])
                 
                 # Find which hourly slots this class spans
                 first_slot_idx = None
