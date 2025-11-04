@@ -1,0 +1,17 @@
+**/__pycache__
+**/.venv
+**/.git
+**/.gitignore
+**/.vscode
+**/.idea
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.Python
+env/
+venv/
+ENV/
+.DS_Store
+*.md
+!README.md
+.streamlit/secrets.toml
