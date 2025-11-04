@@ -1869,7 +1869,7 @@ def authentication_screen():
 
     st.markdown(
         """
-### Welcome to Nick's SAIT Schedule Buildeer!
+### Welcome to Nick's SAIT Schedule Builder!
 
 To use the API features of this app (automatic course search and import), you need to provide your **Banner authentication tokens**.
 
