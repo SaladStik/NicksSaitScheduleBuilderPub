@@ -1,6 +1,6 @@
 # Nick's SAIT Schedule Builder 🎓
 
-Built by [Nicholas Irvine (SaladStik)](https://github.com/SaladStik)
+Built by [Nicholas Irvine (SaladStik)](https://github.com/SaladStik) & currently hosted on [my website!](https://saitscheduler.saladsync.ca)
 
 A powerful web app that helps SAIT students explore **ALL** possible schedule combinations and automatically generate personalized timetables. Browse through hundreds of valid schedules, find the perfect one, and export it directly to your calendar!
 
@@ -10,7 +10,7 @@ A powerful web app that helps SAIT students explore **ALL** possible schedule co
 
 ```bash
 git clone https://github.com/SaladStik/NicksSaitScheduleBuilderPub
-cd Class-Schedule-Management
+cd NicksSaitScheduleBuilderPub
 ```
 
 2. **Install dependencies:**
