@@ -29,7 +29,7 @@ def get_term_name(term_code: str) -> str:
     Convert term code to human-readable name
     Format: YYYYSS where YYYY is year and SS is semester
     30 = Winter, 40 = Spring/Summer, 50 = Fall
-    
+
     Examples:
     202530 -> Winter 2025
     202540 -> Spring/Summer 2025
@@ -37,17 +37,13 @@ def get_term_name(term_code: str) -> str:
     """
     if not term_code or len(term_code) != 6:
         return term_code
-    
+
     try:
         year = term_code[:4]
         semester_code = term_code[4:6]
-        
-        semester_map = {
-            "30": "Winter",
-            "40": "Spring/Summer",
-            "50": "Fall"
-        }
-        
+
+        semester_map = {"30": "Winter", "40": "Spring/Summer", "50": "Fall"}
+
         semester = semester_map.get(semester_code, f"Semester {semester_code}")
         return f"{semester} {year}"
     except:
@@ -77,12 +73,18 @@ def get_banner_credentials():
                 "NSC_ESNS": st.secrets["BANNER"]["NSC_ESNS"],
             }
             st.session_state.banner_token = st.secrets["BANNER"]["SYNC_TOKEN"]
-            st.session_state.banner_session_id = st.secrets["BANNER"].get("UNIQUE_SESSION_ID", "")
+            st.session_state.banner_session_id = st.secrets["BANNER"].get(
+                "UNIQUE_SESSION_ID", ""
+            )
         except:
             # No credentials available - user needs to authenticate
             return None, None, ""
 
-    return st.session_state.banner_cookies, st.session_state.banner_token, st.session_state.get("banner_session_id", "")
+    return (
+        st.session_state.banner_cookies,
+        st.session_state.banner_token,
+        st.session_state.get("banner_session_id", ""),
+    )
 
 
 def fetch_available_terms() -> List[Dict]:
@@ -567,43 +569,52 @@ def get_current_registrations(term: str, unique_session_id: str = "") -> List[Di
                         course_number = course.get("courseNumber", "")
                         course_title = course.get("courseTitle", "")
                         section = course.get("sequenceNumber", "A")
-                        
+
                         # Process each meeting time
                         meeting_times = course.get("meetingTimes", [])
                         for meeting in meeting_times:
                             # Get day of week
                             days = []
-                            if meeting.get("monday"): days.append("Monday")
-                            if meeting.get("tuesday"): days.append("Tuesday")
-                            if meeting.get("wednesday"): days.append("Wednesday")
-                            if meeting.get("thursday"): days.append("Thursday")
-                            if meeting.get("friday"): days.append("Friday")
-                            
+                            if meeting.get("monday"):
+                                days.append("Monday")
+                            if meeting.get("tuesday"):
+                                days.append("Tuesday")
+                            if meeting.get("wednesday"):
+                                days.append("Wednesday")
+                            if meeting.get("thursday"):
+                                days.append("Thursday")
+                            if meeting.get("friday"):
+                                days.append("Friday")
+
                             # Get times
                             begin_time = meeting.get("beginTime", "")
                             end_time = meeting.get("endTime", "")
                             start_date = meeting.get("startDate", "")
                             end_date = meeting.get("endDate", "")
-                            
+
                             # For each day this meeting occurs
                             for day in days:
-                                converted_events.append({
-                                    "crn": crn,
-                                    "subject": subject,
-                                    "courseNumber": course_number,
-                                    "title": f"{subject} {course_number}",
-                                    "courseTitle": course_title,
-                                    "section": section,
-                                    "term": term,
-                                    "day": day,
-                                    "beginTime": begin_time,
-                                    "endTime": end_time,
-                                    "startDate": start_date,
-                                    "endDate": end_date,
-                                    "building": meeting.get("buildingDescription", ""),
-                                    "room": meeting.get("room", ""),
-                                })
-                    
+                                converted_events.append(
+                                    {
+                                        "crn": crn,
+                                        "subject": subject,
+                                        "courseNumber": course_number,
+                                        "title": f"{subject} {course_number}",
+                                        "courseTitle": course_title,
+                                        "section": section,
+                                        "term": term,
+                                        "day": day,
+                                        "beginTime": begin_time,
+                                        "endTime": end_time,
+                                        "startDate": start_date,
+                                        "endDate": end_date,
+                                        "building": meeting.get(
+                                            "buildingDescription", ""
+                                        ),
+                                        "room": meeting.get("room", ""),
+                                    }
+                                )
+
                     return converted_events
                 else:
                     st.error(f"❌ Unexpected data type: {type(data)}")
@@ -629,29 +640,32 @@ def get_current_registrations(term: str, unique_session_id: str = "") -> List[Di
 def save_term_to_banner(term: str, mode: str = "registration") -> tuple[bool, str]:
     """
     Save the selected term to Banner session
-    
+
     Args:
         term: Term code (e.g., "202520")
         mode: Mode (default "registration")
-    
+
     Returns:
         Tuple of (success: bool, unique_session_id: str)
     """
     cookies, sync_token, unique_session_id = get_banner_credentials()
-    
+
     if not cookies or not sync_token:
         return False, ""
-    
+
     # Use the existing session ID from authentication, or generate if not available
     if not unique_session_id:
         import random
         import string
-        unique_session_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=5)) + str(int(time.time() * 1000))
-    
+
+        unique_session_id = "".join(
+            random.choices(string.ascii_lowercase + string.digits, k=5)
+        ) + str(int(time.time() * 1000))
+
     try:
         # Step 0: Fetch usage tracking BEFORE term selection (as shown in PowerShell)
         tracking_url_before = "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/userPreference/fetchUsageTracking"
-        
+
         tracking_headers_before = {
             "Accept": "*/*",
             "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -666,14 +680,19 @@ def save_term_to_banner(term: str, mode: str = "registration") -> tuple[bool, st
             "sec-ch-ua-mobile": "?0",
             "sec-ch-ua-platform": '"Windows"',
         }
-        
-        response0 = requests.get(tracking_url_before, headers=tracking_headers_before, cookies=cookies, timeout=10)
+
+        response0 = requests.get(
+            tracking_url_before,
+            headers=tracking_headers_before,
+            cookies=cookies,
+            timeout=10,
+        )
         if response0.status_code != 200:
             return False, ""
-        
+
         # Step 1: Save the term
         save_url = f"https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/term/saveTerm?mode={mode}&term={term}&uniqueSessionId={unique_session_id}"
-        
+
         headers = {
             "Accept": "*/*",
             "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -690,15 +709,15 @@ def save_term_to_banner(term: str, mode: str = "registration") -> tuple[bool, st
             "sec-ch-ua-mobile": "?0",
             "sec-ch-ua-platform": '"Windows"',
         }
-        
+
         # Step 1: Save term
         response1 = requests.get(save_url, headers=headers, cookies=cookies, timeout=10)
         if response1.status_code != 200:
             return False, ""
-        
+
         # Step 2: POST to term search
         search_url = f"https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/term/search?mode={mode}"
-        
+
         search_headers = {
             "Accept": "*/*",
             "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -717,16 +736,22 @@ def save_term_to_banner(term: str, mode: str = "registration") -> tuple[bool, st
             "sec-ch-ua-platform": '"Windows"',
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         }
-        
+
         search_data = f"term={term}&studyPath=&studyPathText=&startDatepicker=&endDatepicker=&uniqueSessionId={unique_session_id}"
-        
-        response2 = requests.post(search_url, headers=search_headers, cookies=cookies, data=search_data, timeout=10)
+
+        response2 = requests.post(
+            search_url,
+            headers=search_headers,
+            cookies=cookies,
+            data=search_data,
+            timeout=10,
+        )
         if response2.status_code != 200:
             return False, ""
-        
+
         # Step 3: Fetch usage tracking AFTER term selection (final step)
         tracking_url = "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/userPreference/fetchUsageTracking"
-        
+
         tracking_headers = {
             "Accept": "*/*",
             "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -741,15 +766,19 @@ def save_term_to_banner(term: str, mode: str = "registration") -> tuple[bool, st
             "sec-ch-ua-mobile": "?0",
             "sec-ch-ua-platform": '"Windows"',
         }
-        
-        response3 = requests.get(tracking_url, headers=tracking_headers, cookies=cookies, timeout=10)
+
+        response3 = requests.get(
+            tracking_url, headers=tracking_headers, cookies=cookies, timeout=10
+        )
         return response3.status_code == 200, unique_session_id
-        
+
     except Exception as e:
         return False, ""
 
 
-def get_registration_models_for_term(term: str, unique_session_id: str = "") -> Dict[str, Dict]:
+def get_registration_models_for_term(
+    term: str, unique_session_id: str = ""
+) -> Dict[str, Dict]:
     """
     Extract full registration model objects from the Banner registration page HTML.
     The models are embedded in window.bootstraps.summaryModels in the JavaScript.
@@ -1313,28 +1342,32 @@ def get_unique_time_slots(classes):
 def get_hourly_time_slots(classes):
     """Generate 10-minute interval time slots from earliest to latest class time"""
     from datetime import datetime, timedelta, time
-    
+
     # Find the earliest and latest times
     all_times = []
     for cls in classes:
         for session in cls["schedule"]:
             all_times.append(session["start_time"])
             all_times.append(session["end_time"])
-    
+
     if not all_times:
         return []
-    
+
     earliest = min(all_times)
     latest = max(all_times)
-    
+
     # Convert time objects to datetime for easier manipulation
     base_date = datetime(2000, 1, 1)  # Arbitrary date for calculations
-    
+
     # Convert to datetime objects for manipulation
     if isinstance(earliest, str):
         # Parse string times like "08:00"
-        earliest_dt = datetime.combine(base_date, datetime.strptime(earliest, "%H:%M").time())
-        latest_dt = datetime.combine(base_date, datetime.strptime(latest, "%H:%M").time())
+        earliest_dt = datetime.combine(
+            base_date, datetime.strptime(earliest, "%H:%M").time()
+        )
+        latest_dt = datetime.combine(
+            base_date, datetime.strptime(latest, "%H:%M").time()
+        )
     elif isinstance(earliest, datetime):
         earliest_dt = earliest
         latest_dt = latest
@@ -1344,16 +1377,18 @@ def get_hourly_time_slots(classes):
         latest_dt = datetime.combine(base_date, latest)
     else:
         return []
-    
+
     # Round down to the hour for start
     start_hour = earliest_dt.replace(minute=0, second=0, microsecond=0)
-    
+
     # Round up to the hour for end
     if latest_dt.minute > 0 or latest_dt.second > 0:
-        end_hour = (latest_dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1))
+        end_hour = latest_dt.replace(minute=0, second=0, microsecond=0) + timedelta(
+            hours=1
+        )
     else:
         end_hour = latest_dt
-    
+
     # Generate 10-minute interval slots and return as time objects
     time_slots = []
     current = start_hour
@@ -1361,7 +1396,7 @@ def get_hourly_time_slots(classes):
         next_slot = current + timedelta(minutes=10)
         time_slots.append((current.time(), next_slot.time()))
         current = next_slot
-    
+
     return time_slots
 
 
@@ -1376,34 +1411,36 @@ def display_timetable_html(combo, time_slots, classes, key_suffix=""):
     import streamlit.components.v1 as components
     from datetime import datetime, timedelta
     import json
-    
+
     # Define color palette
     COLOR_PALETTE = [
-        "#3788d8", "#f39c12", "#27ae60", "#8e44ad", "#e74c3c",
-        "#16a085", "#c0392b", "#2980b9", "#d35400", "#2ecc71"
+        "#3788d8",
+        "#f39c12",
+        "#27ae60",
+        "#8e44ad",
+        "#e74c3c",
+        "#16a085",
+        "#c0392b",
+        "#2980b9",
+        "#d35400",
+        "#2ecc71",
     ]
-    
+
     # Get or create deterministic colors for each class
     for cls in classes:
         if cls["name"] not in st.session_state.class_colors:
             # Use hash of class name to get consistent color
             color_index = hash(cls["name"]) % len(COLOR_PALETTE)
             st.session_state.class_colors[cls["name"]] = COLOR_PALETTE[color_index]
-    
+
     # Day mapping for calendar
-    day_map = {
-        "Monday": 1,
-        "Tuesday": 2,
-        "Wednesday": 3,
-        "Thursday": 4,
-        "Friday": 5
-    }
-    
+    day_map = {"Monday": 1, "Tuesday": 2, "Wednesday": 3, "Thursday": 4, "Friday": 5}
+
     # Create events for the calendar - use base week of January 2024
     base_date = datetime(2024, 1, 1)  # Monday, Jan 1, 2024
-    
+
     calendar_events = []
-    
+
     for cls in combo:
         for session in cls["schedule"]:
             day_name = session["day"]
@@ -1414,15 +1451,15 @@ def display_timetable_html(combo, time_slots, classes, key_suffix=""):
                 start_time = start_time.time()
             if isinstance(end_time, datetime):
                 end_time = end_time.time()
-            
+
             # Calculate the date for this day of the week
             day_offset = day_map.get(day_name, 1) - 1
             event_date = base_date + timedelta(days=day_offset)
-            
+
             # Combine date with time
             start_datetime = datetime.combine(event_date, start_time)
             end_datetime = datetime.combine(event_date, end_time)
-            
+
             # Create event object
             event = {
                 "title": f"{cls['name']} - Group {cls['group']}",
@@ -1433,14 +1470,14 @@ def display_timetable_html(combo, time_slots, classes, key_suffix=""):
                 "textColor": "#ffffff",
                 "extendedProps": {
                     "room": session.get("class_room", "N/A"),
-                    "group": cls["group"]
-                }
+                    "group": cls["group"],
+                },
             }
             calendar_events.append(event)
-    
+
     # Convert events to JSON
     events_json = json.dumps(calendar_events)
-    
+
     # Create HTML with FullCalendar
     html_code = f"""
     <!DOCTYPE html>
@@ -1538,17 +1575,17 @@ def display_timetable_html(combo, time_slots, classes, key_suffix=""):
     </body>
     </html>
     """
-    
+
     # Display using Streamlit components
     components.html(html_code, height=900, scrolling=True)
-    
+
     return ""  # Return empty string for compatibility
 
 
 def create_single_sheet_xlsx_timetables(combinations, filename, time_slots, classes):
     """Create Excel timetables with proper hourly rows and merged cells for multi-hour classes"""
     from datetime import timedelta
-    
+
     wb = Workbook()
     ws = wb.active
     ws.title = "Schedules"
@@ -1593,39 +1630,43 @@ def create_single_sheet_xlsx_timetables(combinations, filename, time_slots, clas
         # Track which cells should be skipped due to merging
         skip_cells = {}
         cell_data = {}
-        
+
         # Helper function to ensure we're comparing comparable objects
         def normalize_time(t):
             if isinstance(t, datetime):
                 return t.time()
             return t
-        
+
         # Pre-process all classes to determine which cells to merge
         for cls in combo:
             for session in cls["schedule"]:
                 day = session["day"]
                 start_time = normalize_time(session["start_time"])
                 end_time = normalize_time(session["end_time"])
-                
+
                 # Find which hourly slots this class spans
                 first_slot_idx = None
                 last_slot_idx = None
-                
+
                 for idx, (slot_start, slot_end) in enumerate(time_slots):
                     # Class starts in or before this slot and ends after slot starts
                     if start_time < slot_end and end_time > slot_start:
                         if first_slot_idx is None:
                             first_slot_idx = idx
                         last_slot_idx = idx
-                
+
                 if first_slot_idx is not None:
                     rowspan = last_slot_idx - first_slot_idx + 1
                     class_room_info = session.get("class_room", "N/A")
                     class_info = f"{cls['name']}\n(Group {cls['group']}\nRoom: {class_room_info})"
-                    
+
                     # Store the cell data for the first slot
-                    cell_data[(first_slot_idx, day)] = (class_info, rowspan, cls["name"])
-                    
+                    cell_data[(first_slot_idx, day)] = (
+                        class_info,
+                        rowspan,
+                        cls["name"],
+                    )
+
                     # Mark subsequent slots as skipped
                     for skip_idx in range(first_slot_idx + 1, last_slot_idx + 1):
                         skip_cells[(skip_idx, day)] = True
@@ -1643,26 +1684,28 @@ def create_single_sheet_xlsx_timetables(combinations, filename, time_slots, clas
 
             for day_idx, day in enumerate(days):
                 day_col = day_idx + 2
-                
+
                 # Skip this cell if it's part of a merge from above
                 if skip_cells.get((idx, day), False):
                     continue
-                
+
                 # Check if there's class data for this cell
                 if (idx, day) in cell_data:
                     class_info, rowspan, class_name = cell_data[(idx, day)]
                     cell = ws.cell(row=current_row, column=day_col)
                     cell.value = class_info
                     cell.fill = class_colors[class_name]
-                    cell.alignment = Alignment(wrap_text=True, vertical='center', horizontal='center')
-                    
+                    cell.alignment = Alignment(
+                        wrap_text=True, vertical="center", horizontal="center"
+                    )
+
                     # Merge cells if rowspan > 1
                     if rowspan > 1:
                         ws.merge_cells(
                             start_row=current_row,
                             start_column=day_col,
                             end_row=current_row + rowspan - 1,
-                            end_column=day_col
+                            end_column=day_col,
                         )
 
         # Apply the border to each cell in the timetable
@@ -1697,9 +1740,9 @@ def generate_ics_file_for_classes(
     filename="class_schedule.ics",
 ):
     cal = Calendar()
-    
+
     # Set timezone to Mountain Standard Time (MST/MDT - Alberta, Canada)
-    mst = pytz.timezone('America/Edmonton')
+    mst = pytz.timezone("America/Edmonton")
 
     start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
     end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
@@ -1758,18 +1801,26 @@ def generate_ics_file_for_classes(
                 continue
 
             # Create datetime objects with MST timezone
-            start_datetime = mst.localize(datetime.combine(
-                first_occurrence_date, datetime.strptime(start_time_str, "%H:%M").time()
-            ))
-            end_datetime = mst.localize(datetime.combine(
-                first_occurrence_date, datetime.strptime(end_time_str, "%H:%M").time()
-            ))
+            start_datetime = mst.localize(
+                datetime.combine(
+                    first_occurrence_date,
+                    datetime.strptime(start_time_str, "%H:%M").time(),
+                )
+            )
+            end_datetime = mst.localize(
+                datetime.combine(
+                    first_occurrence_date,
+                    datetime.strptime(end_time_str, "%H:%M").time(),
+                )
+            )
             if end_datetime <= start_datetime:
                 # Skipping event due to invalid time range
                 continue
 
             # Create end date with timezone for recurrence rule
-            end_date_with_tz = mst.localize(datetime.combine(end_date, datetime.max.time()))
+            end_date_with_tz = mst.localize(
+                datetime.combine(end_date, datetime.max.time())
+            )
 
             event = Event()
             event.add("summary", f"{cls['name']} - Section {cls['group']}")
@@ -1818,7 +1869,7 @@ def authentication_screen():
 
     st.markdown(
         """
-### Welcome to Nick's SAIT Schedule Builder!
+### Welcome to Nick's SAIT Schedule Buildeer!
 
 To use the API features of this app (automatic course search and import), you need to provide your **Banner authentication tokens**.
 
@@ -1881,7 +1932,9 @@ X-Synchronizer-Token: ...
 
                         st.session_state.banner_cookies = cookie_dict
                         st.session_state.banner_token = credentials["sync_token"]
-                        st.session_state.banner_session_id = credentials.get("unique_session_id", "")
+                        st.session_state.banner_session_id = credentials.get(
+                            "unique_session_id", ""
+                        )
                         st.session_state.auth_checked = True
                         st.session_state.term_selected = (
                             False  # Add term selection step
@@ -1956,23 +2009,25 @@ def term_selection_screen():
         st.error("❌ Failed to fetch terms from Banner API")
         st.warning("⚠️ The headers you provided are either wrong or invalid.")
         st.info("💡 You can either:")
-        
+
         col1, col2 = st.columns(2)
-        
+
         with col1:
             if st.button("🔄 Provide New Headers", use_container_width=True):
                 # Clear authentication and redirect to auth screen
                 st.session_state.banner_credentials = None
                 st.session_state.auth_checked = False
                 st.rerun()
-        
+
         with col2:
             if st.button("➡️ Continue Without API", use_container_width=True):
                 st.session_state.selected_term = "202530"
                 st.session_state.term_selected = True
-                st.info("You can still use the manual schedule builder without API features")
+                st.info(
+                    "You can still use the manual schedule builder without API features"
+                )
                 st.rerun()
-        
+
         return
 
     st.success(f"✅ Found {len(terms)} available terms")
@@ -3258,7 +3313,9 @@ def timetable_creator():
 
             # Display the timetable
             time_slots = get_hourly_time_slots(parsed_classes)
-            display_timetable_html(current_combo, time_slots, classes, key_suffix=f"browse_{current_idx}")
+            display_timetable_html(
+                current_combo, time_slots, classes, key_suffix=f"browse_{current_idx}"
+            )
 
             # Download options
             st.markdown("---")
@@ -3405,27 +3462,29 @@ def manual_schedule_editor():
             st.error("❌ Failed to set term in Banner session")
             st.error("Please check your authentication and try again")
             return
-    
+
     # Fetch current registrations (calendar events) using the same session ID
     with st.spinner("Loading your current schedule from Banner..."):
         try:
             # First, set the term to ensure session is correct
             # This is already done above, but the registration models call needs it
-            
+
             # Fetch full registration models - these contain all course details
-            registration_models = get_registration_models_for_term(selected_term, unique_session_id)
-            
+            registration_models = get_registration_models_for_term(
+                selected_term, unique_session_id
+            )
+
             # Store in session state
             if "registration_models" not in st.session_state:
                 st.session_state.registration_models = {}
             st.session_state.registration_models = registration_models
-            
+
             # Convert models to calendar events
             # Use the getMeetingInformationForRegistrations endpoint which has meetingTimes
             calendar_events = []
-            
+
             url = "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/classRegistration/getMeetingInformationForRegistrations"
-            
+
             headers = {
                 "Accept": "*/*",
                 "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -3442,12 +3501,17 @@ def manual_schedule_editor():
                 "sec-ch-ua-mobile": "?0",
                 "sec-ch-ua-platform": '"Windows"',
             }
-            
-            response = requests.get(url, headers=headers, cookies=st.session_state.banner_cookies, timeout=15)
-            
+
+            response = requests.get(
+                url,
+                headers=headers,
+                cookies=st.session_state.banner_cookies,
+                timeout=15,
+            )
+
             if response.status_code == 200:
                 data = response.json()
-                
+
                 # The response is a list of course objects
                 if isinstance(data, list):
                     for course in data:
@@ -3456,7 +3520,7 @@ def manual_schedule_editor():
                         course_number = course.get("courseNumber", "")
                         course_title = course.get("courseTitle", "")
                         section = course.get("sequenceNumber", "")
-                        
+
                         # Get instructor from faculty array
                         instructor = "TBA"
                         faculty_list = course.get("faculty", [])
@@ -3469,47 +3533,59 @@ def manual_schedule_editor():
                             if instructor == "TBA" and faculty_list:
                                 # If no primary, just take the first one
                                 instructor = faculty_list[0].get("displayName", "TBA")
-                        
+
                         # Get the meetingTimes array
                         meeting_times = course.get("meetingTimes", [])
-                        
+
                         for meeting in meeting_times:
                             # Check which days this meeting occurs
                             days = []
-                            if meeting.get("monday"): days.append("Monday")
-                            if meeting.get("tuesday"): days.append("Tuesday")
-                            if meeting.get("wednesday"): days.append("Wednesday")
-                            if meeting.get("thursday"): days.append("Thursday")
-                            if meeting.get("friday"): days.append("Friday")
-                            if meeting.get("saturday"): days.append("Saturday")
-                            if meeting.get("sunday"): days.append("Sunday")
-                            
+                            if meeting.get("monday"):
+                                days.append("Monday")
+                            if meeting.get("tuesday"):
+                                days.append("Tuesday")
+                            if meeting.get("wednesday"):
+                                days.append("Wednesday")
+                            if meeting.get("thursday"):
+                                days.append("Thursday")
+                            if meeting.get("friday"):
+                                days.append("Friday")
+                            if meeting.get("saturday"):
+                                days.append("Saturday")
+                            if meeting.get("sunday"):
+                                days.append("Sunday")
+
                             # Get semester start and end dates from the meeting
                             start_date = meeting.get("startDate", "")
                             end_date = meeting.get("endDate", "")
-                            
+
                             # Create an event for each day
                             for day in days:
-                                calendar_events.append({
-                                    "crn": crn,
-                                    "subject": subject,
-                                    "courseNumber": course_number,
-                                    "courseTitle": course_title,
-                                    "section": section,
-                                    "instructor": instructor,
-                                    "day": day,
-                                    "beginTime": meeting.get("beginTime", ""),
-                                    "endTime": meeting.get("endTime", ""),
-                                    "building": meeting.get("buildingDescription", ""),
-                                    "room": meeting.get("room", ""),
-                                    "startDate": start_date,
-                                    "endDate": end_date,
-                                    "term": selected_term,
-                                })
-            
+                                calendar_events.append(
+                                    {
+                                        "crn": crn,
+                                        "subject": subject,
+                                        "courseNumber": course_number,
+                                        "courseTitle": course_title,
+                                        "section": section,
+                                        "instructor": instructor,
+                                        "day": day,
+                                        "beginTime": meeting.get("beginTime", ""),
+                                        "endTime": meeting.get("endTime", ""),
+                                        "building": meeting.get(
+                                            "buildingDescription", ""
+                                        ),
+                                        "room": meeting.get("room", ""),
+                                        "startDate": start_date,
+                                        "endDate": end_date,
+                                        "term": selected_term,
+                                    }
+                                )
+
         except Exception as e:
             st.error(f"❌ Error loading schedule: {str(e)}")
             import traceback
+
             st.code(traceback.format_exc())
             return
 
@@ -3523,7 +3599,7 @@ def manual_schedule_editor():
     # Group events by CRN (each class has multiple events for different meeting times)
     # Also get section info from models if available
     classes_by_crn = {}
-    
+
     for event in calendar_events:
         crn = event.get("crn", "")
         if not crn:
@@ -3550,7 +3626,7 @@ def manual_schedule_editor():
 
     if classes_by_crn:
         parsed_classes = []
-        
+
         for crn, class_info in classes_by_crn.items():
             # Parse events into schedule format
             schedule_by_day = {}
@@ -3626,9 +3702,15 @@ def manual_schedule_editor():
             st.session_state.classes_to_drop = []
 
         # Create table header
-        col_check, col_course, col_title, col_section, col_instructor, col_room, col_crn = st.columns(
-            [0.8, 1.5, 3, 0.8, 2, 1.5, 1.2]
-        )
+        (
+            col_check,
+            col_course,
+            col_title,
+            col_section,
+            col_instructor,
+            col_room,
+            col_crn,
+        ) = st.columns([0.8, 1.5, 3, 0.8, 2, 1.5, 1.2])
         with col_check:
             st.write("**Drop?**")
         with col_course:
@@ -3651,7 +3733,7 @@ def manual_schedule_editor():
             title = class_info["title"]
             section = class_info.get("section", "A")
             instructor = class_info.get("instructor", "TBA")
-            
+
             # Get room(s) - may have multiple if different meeting times have different rooms
             rooms = set()
             for event in class_info["events"]:
@@ -3659,9 +3741,15 @@ def manual_schedule_editor():
                     rooms.add(event.get("room"))
             room_display = ", ".join(sorted(rooms)) if rooms else "TBA"
 
-            col_check, col_course, col_title, col_section, col_instructor, col_room, col_crn_val = st.columns(
-                [0.8, 1.5, 3, 0.8, 2, 1.5, 1.2]
-            )
+            (
+                col_check,
+                col_course,
+                col_title,
+                col_section,
+                col_instructor,
+                col_room,
+                col_crn_val,
+            ) = st.columns([0.8, 1.5, 3, 0.8, 2, 1.5, 1.2])
 
             with col_check:
                 drop_selected = st.checkbox(
@@ -3680,10 +3768,10 @@ def manual_schedule_editor():
 
             with col_section:
                 st.write(section)
-            
+
             with col_instructor:
                 st.write(instructor)
-            
+
             with col_room:
                 st.write(room_display)
 
@@ -3699,7 +3787,9 @@ def manual_schedule_editor():
 
             col1, col2 = st.columns([1, 3])
             with col1:
-                if st.button("🗑️ Drop Selected Classes", type="primary", key="drop_classes_button"):
+                if st.button(
+                    "🗑️ Drop Selected Classes", type="primary", key="drop_classes_button"
+                ):
                     # Confirm drop
                     with st.spinner("Dropping classes..."):
                         result = drop_classes(
@@ -3719,12 +3809,12 @@ def manual_schedule_editor():
                             error_msg = result.get("error", "Unknown error")
                             st.error(f"❌ Failed to drop classes: {error_msg}")
             with col2:
-                    st.caption(
-                        "⚠️ Dropping a class releases your seat - another student may register for it."
-                    )
-                    st.caption(
-                        "💡 You can re-register for the class if seats are still available."
-                    )
+                st.caption(
+                    "⚠️ Dropping a class releases your seat - another student may register for it."
+                )
+                st.caption(
+                    "💡 You can re-register for the class if seats are still available."
+                )
     else:
         st.warning("No classes found")
 
@@ -3847,7 +3937,7 @@ def calendar_ics_generator():
     classes_for_ics = []
     semester_start_date = None
     semester_end_date = None
-    
+
     for crn, class_info in classes_by_crn.items():
         schedule_by_day = {}
 
@@ -3870,7 +3960,7 @@ def calendar_ics_generator():
             end_time = event.get("endTime", "")
             building = event.get("building", "")
             room = event.get("room", "")
-            
+
             # Extract semester dates from the first event (they should be the same for all)
             if not semester_start_date and event.get("startDate"):
                 semester_start_date = event.get("startDate")
@@ -3926,13 +4016,13 @@ def calendar_ics_generator():
 
     st.markdown("---")
     st.markdown("### 📅 Semester Dates")
-    
+
     # Convert MM/DD/YYYY format to datetime
     from datetime import datetime
-    
+
     default_start = None
     default_end = None
-    
+
     if semester_start_date:
         try:
             # Parse "01/06/2026" format
@@ -3940,7 +4030,7 @@ def calendar_ics_generator():
             st.info(f"📆 Semester starts: **{default_start.strftime('%B %d, %Y')}**")
         except Exception:
             pass
-    
+
     if semester_end_date:
         try:
             # Parse "04/23/2026" format
@@ -3948,18 +4038,26 @@ def calendar_ics_generator():
             st.info(f"📆 Semester ends: **{default_end.strftime('%B %d, %Y')}**")
         except Exception:
             pass
-    
+
     # Show date inputs with defaults from Banner
     if default_start and default_end:
-        st.markdown("*Dates automatically detected from Banner. You can adjust them below if needed.*")
-        
+        st.markdown(
+            "*Dates automatically detected from Banner. You can adjust them below if needed.*"
+        )
+
         col1, col2 = st.columns(2)
         with col1:
-            start_date = st.date_input("Start date", value=default_start, help="First day of classes")
+            start_date = st.date_input(
+                "Start date", value=default_start, help="First day of classes"
+            )
         with col2:
-            end_date = st.date_input("End date", value=default_end, help="Last day of classes")
+            end_date = st.date_input(
+                "End date", value=default_end, help="Last day of classes"
+            )
     else:
-        st.warning("⚠️ Could not detect semester dates from Banner. Please enter them manually.")
+        st.warning(
+            "⚠️ Could not detect semester dates from Banner. Please enter them manually."
+        )
         col1, col2 = st.columns(2)
         with col1:
             start_date = st.date_input("Start date", help="First day of classes")
