@@ -1,15 +1,39 @@
-version: "3.8"
-
 services:
-  streamlit:
+  # Jenkins CI/CD Server
+  jenkins:
+    image: jenkins/jenkins:lts
+    privileged: true
+    user: root
+    ports:
+      - "8080:8080" # Jenkins Web UI
+      - "50000:50000" # Jenkins agent port
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - //var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Your Streamlit App
+  streamlit-app:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: sait-schedule-builder
     ports:
       - "8501:8501"
-    volumes:
-      - .:/app
     environment:
       - STREAMLIT_SERVER_PORT=8501
       - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+    networks:
+      - app-network
     restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  jenkins_home:
