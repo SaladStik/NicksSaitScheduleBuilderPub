@@ -2141,6 +2141,9 @@ def main():
                 If something seems confusing, don't hesitate to reach out!</p>
                 <div class="social-links">
                     <p><strong>Connect with me:</strong></p>
+                    <a href="https://saladsync.ca" target="_blank" class="social-link">
+                        🤓 My Portfolio
+                    </a>
                     <a href="https://www.linkedin.com/in/nicholas-irvine-303ab5284/" target="_blank" class="social-link">
                         💼 LinkedIn - Nicholas Irvine
                     </a>
