@@ -2065,6 +2065,654 @@ def term_selection_screen():
             st.rerun()
 
 
+# AUTO-REGISTER WAITLIST FUNCTIONS
+
+
+def fetch_terms_quiet() -> List[Dict]:
+    """
+    Fetch available terms from Banner API WITHOUT st.error() calls.
+    Used by the auto-register poller so it doesn't flash error messages on every cycle.
+    """
+    cookies, sync_token, _ = get_banner_credentials()
+    if not cookies or not sync_token:
+        return []
+
+    terms_url = "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/classRegistration/getTerms"
+
+    params = {"searchTerm": "", "offset": 1, "max": 20, "_": int(time.time() * 1000)}
+
+    headers = {
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Referer": "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/term/termSelection?mode=registration",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "X-Requested-With": "XMLHttpRequest",
+        "X-Synchronizer-Token": sync_token,
+        "sec-ch-ua": '"Chromium";v="140", "Not=A?Brand";v="24", "Google Chrome";v="140"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+    }
+
+    try:
+        response = requests.get(
+            terms_url, params=params, headers=headers, cookies=cookies, timeout=15
+        )
+        if response.status_code == 200:
+            terms = response.json()
+            return terms if isinstance(terms, list) else []
+        return []
+    except Exception:
+        return []
+
+
+def save_term_quiet(term: str) -> tuple:
+    """
+    Save term to Banner session WITHOUT st.error() calls.
+    Returns (success: bool, unique_session_id: str)
+    """
+    cookies, sync_token, unique_session_id = get_banner_credentials()
+    if not cookies or not sync_token:
+        return False, ""
+
+    if not unique_session_id:
+        import random
+        import string
+
+        unique_session_id = "".join(
+            random.choices(string.ascii_lowercase + string.digits, k=5)
+        ) + str(int(time.time() * 1000))
+
+    mode = "registration"
+
+    try:
+        # Step 0: Fetch usage tracking BEFORE term selection
+        tracking_url = "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/userPreference/fetchUsageTracking"
+        tracking_headers = {
+            "Accept": "*/*",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Referer": "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/term/termSelection?mode=registration",
+        }
+        r0 = requests.get(tracking_url, headers=tracking_headers, cookies=cookies, timeout=10)
+        if r0.status_code != 200:
+            return False, ""
+
+        # Step 1: Save the term
+        save_url = f"https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/term/saveTerm?mode={mode}&term={term}&uniqueSessionId={unique_session_id}"
+        headers = {
+            "Accept": "*/*",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Referer": "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/term/termSelection?mode=registration",
+            "X-Requested-With": "XMLHttpRequest",
+            "X-Synchronizer-Token": sync_token,
+        }
+        r1 = requests.get(save_url, headers=headers, cookies=cookies, timeout=10)
+        if r1.status_code != 200:
+            return False, ""
+
+        # Step 2: POST to term search
+        search_url = f"https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/term/search?mode={mode}"
+        search_headers = {
+            "Accept": "*/*",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "no-cache",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Origin": "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca",
+            "Pragma": "no-cache",
+            "Referer": "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/term/termSelection?mode=registration",
+            "X-Requested-With": "XMLHttpRequest",
+            "X-Synchronizer-Token": sync_token,
+        }
+        search_data = f"term={term}&studyPath=&studyPathText=&startDatepicker=&endDatepicker=&uniqueSessionId={unique_session_id}"
+        r2 = requests.post(search_url, headers=search_headers, cookies=cookies, data=search_data, timeout=10)
+        if r2.status_code != 200:
+            return False, ""
+
+        # Step 3: Fetch usage tracking AFTER term selection
+        post_headers = {
+            "Accept": "*/*",
+            "Referer": "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/classRegistration/classRegistration",
+        }
+        r3 = requests.get(tracking_url, headers=post_headers, cookies=cookies, timeout=10)
+        return r3.status_code == 200, unique_session_id
+
+    except Exception:
+        return False, ""
+
+
+def add_class_to_cart_quiet(term: str, crn: str) -> Dict:
+    """
+    Add a class to registration cart WITHOUT st.error() calls.
+    """
+    cookies, sync_token, _ = get_banner_credentials()
+    if not cookies or not sync_token:
+        return {"success": False, "error": "No authentication credentials"}
+
+    url = f"https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/classRegistration/addRegistrationItem?term={term}&courseReferenceNumber={crn}&olr=false"
+
+    headers = {
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Referer": "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/classRegistration/classRegistration",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "X-Requested-With": "XMLHttpRequest",
+        "X-Synchronizer-Token": sync_token,
+        "sec-ch-ua": '"Chromium";v="140", "Not=A?Brand";v="24", "Google Chrome";v="140"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+    }
+
+    try:
+        response = requests.get(url, headers=headers, cookies=cookies, timeout=15)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("success", False):
+                return {"success": True, "data": data}
+            else:
+                return {"success": False, "error": data.get("message", "Unknown error")}
+        else:
+            return {"success": False, "error": f"HTTP {response.status_code}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def submit_registration_quiet(term: str, registration_items: List[Dict]) -> Dict:
+    """
+    Submit registration changes WITHOUT st.error() calls.
+    """
+    cookies, sync_token, _ = get_banner_credentials()
+    if not cookies or not sync_token:
+        return {"success": False, "error": "No credentials"}
+
+    url = "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/classRegistration/submitRegistration/batch"
+
+    headers = {
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Content-Type": "application/json",
+        "Origin": "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca",
+        "Pragma": "no-cache",
+        "Referer": "https://sait-sust-prd-prd1-ban-ss-ssag6.sait.ca/StudentRegistrationSsb/ssb/classRegistration/classRegistration",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "X-Requested-With": "XMLHttpRequest",
+        "X-Synchronizer-Token": sync_token,
+        "sec-ch-ua": '"Chromium";v="140", "Not=A?Brand";v="24", "Google Chrome";v="140"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+    }
+
+    unique_session_id = f"streamlit{int(time.time() * 1000)}"
+
+    payload = {
+        "create": [],
+        "update": registration_items,
+        "destroy": [],
+        "uniqueSessionId": unique_session_id,
+    }
+
+    try:
+        response = requests.post(
+            url, headers=headers, cookies=cookies, json=payload, timeout=15
+        )
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"success": False, "error": f"HTTP {response.status_code}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def auto_register_waitlist():
+    """
+    Auto-register waitlist feature.
+    Polls Banner for a target term and instantly registers specified CRNs when it appears.
+    """
+    st.header("🎯 Auto-Register Waitlist")
+    st.markdown(
+        """
+    **Automatically detect when a term becomes available and instantly register for your classes.**
+
+    This will continuously poll SAIT Banner for available terms. The moment your target term
+    (e.g., Spring/Summer 2026) appears, it will immediately attempt to register you for the
+    specified CRNs. Leave this tab open and let it run!
+    """
+    )
+
+    # Check auth
+    if not st.session_state.get("banner_credentials"):
+        st.error("❌ You must be authenticated to use this feature.")
+        st.info("👆 Go to the sidebar and click 'Authenticate Now'")
+        return
+
+    st.markdown("---")
+
+    # --- Initialize session state ---
+    waitlist_defaults = {
+        "waitlist_active": False,
+        "waitlist_log": [],
+        "waitlist_attempts": 0,
+        "waitlist_found": False,
+        "waitlist_registered": False,
+        "waitlist_found_term": None,
+        "waitlist_reg_results": [],
+        "waitlist_start_time": None,
+        "waitlist_phase": "idle",  # idle, polling, registering, done, error
+        "waitlist_reg_attempts": 0,
+        "waitlist_crns_config": "41231, 40375",
+        "waitlist_target_config": "Spring 2026",
+        "waitlist_interval_config": 2,
+        "waitlist_max_retries_config": 30,
+    }
+    for key, default_val in waitlist_defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = default_val
+
+    # --- CONFIG SECTION ---
+    st.markdown("### ⚙️ Configuration")
+
+    is_active = st.session_state.waitlist_active
+    is_done = st.session_state.waitlist_phase == "done"
+
+    col1, col2 = st.columns(2)
+    with col1:
+        crns_input = st.text_input(
+            "🎟️ CRNs to register (comma separated)",
+            value=st.session_state.waitlist_crns_config,
+            disabled=is_active,
+            help="Enter the Course Reference Numbers you want to auto-register for",
+        )
+    with col2:
+        target_term_input = st.text_input(
+            "🎯 Target term keyword",
+            value=st.session_state.waitlist_target_config,
+            disabled=is_active,
+            help="Will match any term containing ALL of these words (case-insensitive). "
+            "E.g. 'Spring 2026' matches 'Spring/Summer 2026'",
+        )
+
+    col3, col4 = st.columns(2)
+    with col3:
+        poll_interval = st.number_input(
+            "⏱️ Poll interval (seconds)",
+            value=st.session_state.waitlist_interval_config,
+            min_value=1,
+            max_value=60,
+            disabled=is_active,
+            help="How often to check for the term. 2 seconds is aggressive but effective.",
+        )
+    with col4:
+        max_reg_retries = st.number_input(
+            "🔄 Max registration retries",
+            value=st.session_state.waitlist_max_retries_config,
+            min_value=1,
+            max_value=200,
+            disabled=is_active,
+            help="If term is found but registration fails, retry this many times",
+        )
+
+    st.markdown("---")
+
+    # --- CONTROL BUTTONS ---
+    col_start, col_stop, col_reset = st.columns(3)
+
+    with col_start:
+        start_clicked = st.button(
+            "🚀 START POLLING",
+            type="primary",
+            use_container_width=True,
+            disabled=is_active or is_done,
+        )
+
+    with col_stop:
+        stop_clicked = st.button(
+            "🛑 STOP",
+            use_container_width=True,
+            disabled=not is_active,
+        )
+
+    with col_reset:
+        reset_clicked = st.button(
+            "🔄 RESET",
+            use_container_width=True,
+        )
+
+    # Handle button clicks
+    if start_clicked:
+        st.session_state.waitlist_active = True
+        st.session_state.waitlist_phase = "polling"
+        st.session_state.waitlist_log = []
+        st.session_state.waitlist_attempts = 0
+        st.session_state.waitlist_found = False
+        st.session_state.waitlist_registered = False
+        st.session_state.waitlist_found_term = None
+        st.session_state.waitlist_reg_results = []
+        st.session_state.waitlist_start_time = time.time()
+        st.session_state.waitlist_reg_attempts = 0
+        st.session_state.waitlist_crns_config = crns_input
+        st.session_state.waitlist_target_config = target_term_input
+        st.session_state.waitlist_interval_config = poll_interval
+        st.session_state.waitlist_max_retries_config = max_reg_retries
+        ts = datetime.now().strftime("%H:%M:%S")
+        st.session_state.waitlist_log.append(
+            f"[{ts}] 🚀 Started polling for '{target_term_input}' every {poll_interval}s"
+        )
+        st.session_state.waitlist_log.append(
+            f"[{ts}] 🎟️ CRNs to register: {crns_input}"
+        )
+        st.rerun()
+
+    if stop_clicked:
+        st.session_state.waitlist_active = False
+        st.session_state.waitlist_phase = "idle"
+        ts = datetime.now().strftime("%H:%M:%S")
+        st.session_state.waitlist_log.append(f"[{ts}] 🛑 Polling stopped by user")
+        st.rerun()
+
+    if reset_clicked:
+        for key, default_val in waitlist_defaults.items():
+            st.session_state[key] = default_val
+        st.rerun()
+
+    # --- STATUS DISPLAY ---
+    st.markdown("### 📊 Status")
+
+    phase = st.session_state.waitlist_phase
+
+    if phase == "idle":
+        st.info("⏸️ **Idle** — Configure your settings and click Start Polling")
+    elif phase == "polling":
+        elapsed_str = ""
+        if st.session_state.waitlist_start_time:
+            secs = int(time.time() - st.session_state.waitlist_start_time)
+            mins, s = divmod(secs, 60)
+            hrs, m = divmod(mins, 60)
+            elapsed_str = f" | ⏱️ Running for {hrs:02d}:{m:02d}:{s:02d}"
+        st.warning(
+            f"🔄 **ACTIVELY POLLING** — Attempt #{st.session_state.waitlist_attempts}{elapsed_str}"
+        )
+        st.markdown(
+            f"Looking for: **{st.session_state.waitlist_target_config}** | "
+            f"CRNs: **{st.session_state.waitlist_crns_config}** | "
+            f"Interval: **{st.session_state.waitlist_interval_config}s**"
+        )
+    elif phase == "registering":
+        st.info(
+            f"⚡ **REGISTERING** — Term found! Attempting registration... "
+            f"(attempt {st.session_state.waitlist_reg_attempts})"
+        )
+    elif phase == "done":
+        if st.session_state.waitlist_registered:
+            st.success("🎉 **REGISTRATION COMPLETE!** Check results below.")
+            st.balloons()
+        else:
+            st.warning(
+                "⚠️ **FINISHED** — Registration was attempted but may have partial failures. Check results below."
+            )
+    elif phase == "error":
+        st.error("❌ **ERROR** — Max retries reached. Check the log for details.")
+
+    # Show found term info
+    if st.session_state.waitlist_found_term:
+        term_info = st.session_state.waitlist_found_term
+        st.success(
+            f"🎯 **Found term:** {term_info.get('description', '?')} "
+            f"(code: {term_info.get('code', '?')})"
+        )
+
+    # Show registration results
+    if st.session_state.waitlist_reg_results:
+        st.markdown("### 📋 Registration Results")
+        for reg_result in st.session_state.waitlist_reg_results:
+            if reg_result["success"]:
+                st.success(f"✅ CRN {reg_result['crn']}: {reg_result['message']}")
+            else:
+                st.error(f"❌ CRN {reg_result['crn']}: {reg_result['message']}")
+
+    # --- LOG DISPLAY ---
+    st.markdown("### 📜 Activity Log")
+    log_container = st.container(height=400)
+    with log_container:
+        if st.session_state.waitlist_log:
+            for entry in reversed(st.session_state.waitlist_log[-200:]):
+                st.text(entry)
+        else:
+            st.text("No activity yet. Click 'Start Polling' to begin.")
+
+    # =================================================================
+    # POLLING LOGIC — runs one iteration per Streamlit rerun cycle
+    # =================================================================
+    if st.session_state.waitlist_active and st.session_state.waitlist_phase == "polling":
+        st.session_state.waitlist_attempts += 1
+        attempt = st.session_state.waitlist_attempts
+        ts = datetime.now().strftime("%H:%M:%S")
+
+        try:
+            terms = fetch_terms_quiet()
+
+            if not terms:
+                st.session_state.waitlist_log.append(
+                    f"[{ts}] ⚠️ Attempt #{attempt} — No terms returned "
+                    f"(empty response — auth may be expired or Banner may be down)"
+                )
+                time.sleep(st.session_state.waitlist_interval_config)
+                st.rerun()
+
+            # Check for matching term
+            target_words = st.session_state.waitlist_target_config.lower().split()
+            matching_term = None
+
+            for t in terms:
+                desc = t.get("description", "").lower()
+                code = t.get("code", "")
+                # Match if all target words appear in the description
+                if all(word in desc for word in target_words):
+                    matching_term = t
+                    break
+                # Also try matching the raw term code
+                if code and code in st.session_state.waitlist_target_config:
+                    matching_term = t
+                    break
+
+            available_terms_str = ", ".join(
+                [t.get("description", t.get("code", "?")) for t in terms[:8]]
+            )
+
+            if matching_term:
+                # === TERM FOUND! ===
+                st.session_state.waitlist_found = True
+                st.session_state.waitlist_found_term = matching_term
+                st.session_state.waitlist_phase = "registering"
+                st.session_state.waitlist_log.append(
+                    f"[{ts}] 🎉🎉🎉 TERM FOUND after {attempt} attempts: "
+                    f"{matching_term['description']} (code: {matching_term['code']})"
+                )
+                st.session_state.waitlist_log.append(
+                    f"[{ts}] ⚡ Immediately attempting registration for CRNs: "
+                    f"{st.session_state.waitlist_crns_config}"
+                )
+                st.rerun()
+            else:
+                st.session_state.waitlist_log.append(
+                    f"[{ts}] 🔍 #{attempt} — Not found. Available: [{available_terms_str}]"
+                )
+                time.sleep(st.session_state.waitlist_interval_config)
+                st.rerun()
+
+        except Exception as e:
+            st.session_state.waitlist_log.append(
+                f"[{ts}] ❌ #{attempt} — Error: {str(e)}"
+            )
+            time.sleep(st.session_state.waitlist_interval_config)
+            st.rerun()
+
+    # =================================================================
+    # REGISTRATION PHASE — term was found, now register the CRNs
+    # =================================================================
+    if (
+        st.session_state.waitlist_active
+        and st.session_state.waitlist_phase == "registering"
+    ):
+        ts = datetime.now().strftime("%H:%M:%S")
+        term_info = st.session_state.waitlist_found_term
+        term_code = term_info["code"]
+        crns = [
+            c.strip()
+            for c in st.session_state.waitlist_crns_config.split(",")
+            if c.strip()
+        ]
+        max_retries = st.session_state.waitlist_max_retries_config
+        reg_attempt = st.session_state.waitlist_reg_attempts + 1
+        st.session_state.waitlist_reg_attempts = reg_attempt
+
+        st.session_state.waitlist_log.append(
+            f"[{ts}] 📝 Registration attempt #{reg_attempt}/{max_retries} for term {term_code}"
+        )
+
+        # Step 1: Save term to Banner session
+        success, session_id = save_term_quiet(term_code)
+
+        if not success:
+            st.session_state.waitlist_log.append(
+                f"[{ts}] ⚠️ Failed to save term to Banner session"
+            )
+            if reg_attempt < max_retries:
+                st.session_state.waitlist_log.append(
+                    f"[{ts}] 🔄 Retrying in {st.session_state.waitlist_interval_config}s... "
+                    f"({reg_attempt}/{max_retries})"
+                )
+                time.sleep(st.session_state.waitlist_interval_config)
+                st.rerun()
+            else:
+                st.session_state.waitlist_log.append(
+                    f"[{ts}] ❌ Max retries ({max_retries}) reached for term save!"
+                )
+                st.session_state.waitlist_active = False
+                st.session_state.waitlist_phase = "error"
+                st.rerun()
+            return
+
+        st.session_state.waitlist_log.append(
+            f"[{ts}] ✅ Term {term_code} saved to Banner session (session: {session_id[:15]}...)"
+        )
+
+        # Step 2: Add each CRN to cart and submit registration
+        all_success = True
+        results = []
+
+        for crn in crns:
+            st.session_state.waitlist_log.append(
+                f"[{ts}] 📥 Adding CRN {crn} to cart..."
+            )
+
+            add_result = add_class_to_cart_quiet(term_code, crn)
+
+            if not add_result.get("success"):
+                error = add_result.get("error", "Unknown error")
+                st.session_state.waitlist_log.append(
+                    f"[{ts}] ❌ Failed to add CRN {crn}: {error}"
+                )
+                results.append(
+                    {"crn": crn, "success": False, "message": f"Add to cart failed: {error}"}
+                )
+                all_success = False
+                continue
+
+            st.session_state.waitlist_log.append(
+                f"[{ts}] ✅ CRN {crn} added to cart!"
+            )
+
+            # Submit registration for this CRN
+            added_data = add_result.get("data", {})
+            if added_data and "model" in added_data:
+                model = added_data["model"]
+                model["selectedAction"] = "RB"  # RB = Register
+                model["recordStatus"] = "Q"  # Q = Queued
+
+                st.session_state.waitlist_log.append(
+                    f"[{ts}] 📤 Submitting registration for CRN {crn}..."
+                )
+                submit_result = submit_registration_quiet(term_code, [model])
+
+                if submit_result and submit_result.get("success") is not False:
+                    st.session_state.waitlist_log.append(
+                        f"[{ts}] ✅ Registration submitted for CRN {crn}!"
+                    )
+                    results.append(
+                        {"crn": crn, "success": True, "message": "Registration submitted successfully!"}
+                    )
+                else:
+                    error = (
+                        submit_result.get("error", "Unknown error")
+                        if submit_result
+                        else "No response from server"
+                    )
+                    st.session_state.waitlist_log.append(
+                        f"[{ts}] ❌ Submit failed for CRN {crn}: {error}"
+                    )
+                    results.append(
+                        {"crn": crn, "success": False, "message": f"Submit failed: {error}"}
+                    )
+                    all_success = False
+            else:
+                st.session_state.waitlist_log.append(
+                    f"[{ts}] ⚠️ No registration model returned for CRN {crn}"
+                )
+                results.append(
+                    {"crn": crn, "success": False, "message": "No registration model returned"}
+                )
+                all_success = False
+
+            time.sleep(0.3)  # Brief pause between CRNs
+
+        st.session_state.waitlist_reg_results = results
+
+        if all_success:
+            st.session_state.waitlist_log.append(
+                f"[{ts}] 🎉🎉🎉 ALL CLASSES REGISTERED SUCCESSFULLY!"
+            )
+            st.session_state.waitlist_active = False
+            st.session_state.waitlist_registered = True
+            st.session_state.waitlist_phase = "done"
+            st.rerun()
+        else:
+            # Some failed — retry if under max
+            if reg_attempt < max_retries:
+                st.session_state.waitlist_log.append(
+                    f"[{ts}] ⚠️ Some registrations failed. Retrying in "
+                    f"{st.session_state.waitlist_interval_config}s... ({reg_attempt}/{max_retries})"
+                )
+                time.sleep(st.session_state.waitlist_interval_config)
+                st.rerun()
+            else:
+                st.session_state.waitlist_log.append(
+                    f"[{ts}] ❌ Max registration retries ({max_retries}) reached. "
+                    f"Check results above for partial successes."
+                )
+                st.session_state.waitlist_active = False
+                st.session_state.waitlist_phase = "done"
+                st.rerun()
+
+
 # Main app function
 def main():
     # Show welcome dialog first (before anything else)
@@ -2270,12 +2918,13 @@ def main():
     st.divider()
 
     # Create tabs for different functionalities
-    tab1, tab2, tab3, tab4 = st.tabs(
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
         [
             "📚 Class Registration",
             "⏱️ Schedule Creator",
             "� View My Schedule",
             "📅 Add to Calendar",
+            "🎯 Auto-Register",
         ]
     )
 
@@ -2290,6 +2939,9 @@ def main():
 
     with tab4:
         calendar_ics_generator()
+
+    with tab5:
+        auto_register_waitlist()
 
 
 def remove_class_from_db(id, class_name, group):
